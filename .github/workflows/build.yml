@@ -1,0 +1,75 @@
+name: build
+
+on:
+    push:
+        branches:
+            - "*"
+        tags:
+            - v*
+    pull_request:
+        branches:
+            - "*"
+
+jobs:
+    build:
+        name: Build
+        runs-on: ubuntu-22.04
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Checkout platform_detect
+              uses: actions/checkout@v6
+              with:
+                  repository: ElementumOrg/platform_detect
+                  ref: master
+                  path: resources/site-packages/platform_detect
+
+            - name: Checkout binaries
+              uses: actions/checkout@v6
+              with:
+                  repository: elgatito/elementum-binaries
+                  ref: master
+                  path: resources/bin
+
+            - name: Set up Python 3.7
+              uses: actions/setup-python@v5
+              with:
+                  python-version: 3.7
+
+            - name: Install dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install flake8
+
+            - name: Lint
+              run: flake8
+
+            - name: Build
+              run: |
+                ls -la && ls -la resources/site-packages/platform_detect
+                make
+                make zipfiles
+                asset_path=$(ls *.zip)
+                echo "::set-output name=asset_path::${asset_path}"
+                echo "::set-output name=asset_name::$(basename "${asset_path}")"
+
+    release:
+        name: Release
+        runs-on: ubuntu-22.04
+        needs: build
+        if: success() && github.event_name == 'create' && startsWith(github.ref, 'refs/tags/')
+        steps:
+            - name: Install Go
+              uses: actions/setup-go@master
+              with:
+                  go-version: 1.25.x
+
+            - name: Install github-release
+              run: go install github.com/github-release/github-release@latest
+
+            - name: Perform release
+              run: |
+                  make upload
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
